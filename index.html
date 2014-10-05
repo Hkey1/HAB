@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>HTraffic AB Testing Tool</title>
+
+	<meta charset="utf-8" />
+
+    <meta property="og:title" content="HTraffic AB Testing Tool" />
+    <meta property="og:type" content="book" />
+	<meta property="og:url" content="http://htraffic.ru/ab/" />
+    <meta property="book:author" content="Андрей Белоусов" />
+	<meta property="fb:admins" content="100004194825186"/>
+	<meta property="og:site_name" content="HTraffic.ru" />
+	<meta property="og:image" content="http://www.it-agency.ru/sites/all/themes/ita2011/images/shahmatka1.png" />
+    <meta property="og:description" content="Утилита для проведения A/B тестов на уровне кампаний в Яндекс.Директ." />
+	
+	<link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css" rel="stylesheet">
+	<style>
+		.tab-content{
+			padding:18px;
+		}
+		#loginSelect{
+			display: inline;
+			width: auto;
+			margin-left: 50px;
+		}
+		#loginBtn.btn-default{
+			background-color: transparent;
+		}
+		#loginBtn.btn-default:hover{
+			background-color: #e6e6e6;
+		
+		}
+	</style>	
+</head>
+<body>
+	<script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
+	<script>
+		$(function(){
+			$('#loginBtn').click(function(){
+				if($('#loginBtn').attr('disabled'))
+					return;
+				window.popup=window.open(
+					'https://oauth.yandex.ru/authorize'
+						+'?response_type=code'
+						+'&client_id=2bb74cc62d5149b587a5c6038fd782d6'
+						+'&display=popup'
+						,'yandexAuthPopUp'//+Math.random(),
+						,'width=700,height=500'
+				);
+				readPopup();
+			});
+			function readPopup(){
+				var url=false;
+				try{if(window.popup.location && window.popup.location.href)
+					url=window.popup.location.href;
+				}catch(e){}
+				var code=false;
+				if(url){
+					url=url.split('?code=');
+					if(!url[1])
+						url=url[0].split('&code=');
+					if(url[1])
+						code=url[1].split('&')[0];
+				}
+				if(code){
+					window.popup.close();
+					$('#loginBtn').html('Ждите...');
+					$('#loginBtn').attr('disabled','disabled');
+					$.ajax('ajax.php',{
+						type:'POST',
+						data:{
+							method:'LoadUser',
+							code:code							
+						},
+						dataType:'json',
+						success:function(res){
+							$('#loginBtn').removeAttr('disabled');
+							
+							if(res.err){
+								alert('Произошла ошибка');
+								$('#loginBtn').html('Подключить');
+								return;
+							}
+
+
+							res=res.data;
+							window.token=res.token;
+
+							$('#loginBtn').html('Переподключить');
+							$('#loginBtn').removeClass('btn-primary').removeClass('btn-lg').addClass('btn-default');
+							
+							
+							var html="";
+							if(res.count>1){
+								html='<option value="0" selected="selected">Выберите субклиента</option>';
+								$('#loginSelect').removeAttr('disabled');
+							}
+							else
+								$('#loginSelect').attr('disabled','disabled');
+								
+							for(var i in res.list){
+								var fio=res.list[i]||'';
+								html+='<option value="'+i+'">'+i+' '+fio+'</option>';
+							}
+							$('#loginSelect').html(html);
+							$('#loginSelect').css('display','');
+							if(res.count===1)
+								$('#loginSelect').trigger('change'); 
+						},
+						error:function(jqXHR, textStatus, errorThrown){
+							$('#loginBtn').html('Подключить');
+							$('#loginBtn').removeAttr('disabled');
+							alert('Ошибка:'+textStatus+'|'+errorThrown);
+						}
+					});
+				}
+				else
+					window.setTimeout(function(){readPopup()},100);
+			}
+			$('#loginSelect').change(function(){
+				$('#createTabInner').css('display','');
+				$('#createTabInfo').css('display','none');
+				
+				if(!$('#loginSelect').val() && !$('#loginSelect').attr('disabled'))
+					return;
+				$.ajax('ajax.php',{
+					type:'POST',
+					data:{
+						method:'GetCampsList',
+						token:window.token,
+						login:$('#loginSelect').val()
+					},
+					dataType:'json',
+					success:function(res){
+						if(res.err){
+							alert('Произошла ошибка');
+							return;
+						}
+						var data=res.data;
+						var html='';
+						for(var i=0;i<data.length;i++){
+							var cur=data[i];
+							if(!cur.StatusArchive &&  cur.Name && cur.Name.indexOf('_ab_')===-1)
+								html+='<option value="'+cur.CampaignID+'">'+cur.Name+'</option>';
+						}
+						$('#ctCamp').html(html);
+					},
+					error:function(jqXHR, textStatus, errorThrown){
+						alert('Ошибка:'+textStatus+'|'+errorThrown);
+					}
+				});
+			});
+			$('#ct_btn').click(function(){
+				if($('#ct_btn').attr('disabled'))
+					return;
+				$('#ct_btn').attr('disabled','disabled')
+				$.ajax('ajax.php',{
+					type:'POST',
+					data:{
+						method:'clonecamp',
+						token:window.token,
+						login:$('#loginSelect').val(),
+						id:$('#ctCamp').val() * 1,
+						count:$('#ctCount').val() * 1,
+						//moderate:$('#ctModerate').is(':checked'),
+					},
+					dataType:'json',
+					success:function(res){
+						if(res.err){
+							alert('Произошла ошибка');
+							return;
+						}
+						alert(
+							'Клоны кампании созданы. \n'+
+							'Это альфа версия скрипта. Проверьте нет ли в клонах ошибок \n'+
+							'Внесите в вариант B изменения, которые вы хотите проверить. \n'+
+							'Отправьте объявления на модерацию. \n'+
+							'Когда она закончится остановите исходную кампанию и запустите новые.'
+						);
+						$('#ct_btn').removeAttr('disabled');
+					},
+					error:function(jqXHR, textStatus, errorThrown){
+						$('#ct_btn').removeAttr('disabled');
+						alert('Ошибка:'+textStatus+'|'+errorThrown);
+					}
+				});
+				
+			});
+			$('#ct_btn').removeAttr('disabled');
+		});
+	</script>	
+	<div id="fb-root"></div>
+	<script>(function(d, s, id) {
+	  var js, fjs = d.getElementsByTagName(s)[0];
+	  if (d.getElementById(id)) return;
+	  js = d.createElement(s); js.id = id;
+	  js.src = "https://connect.facebook.net/ru_RU/sdk.js#xfbml=1&version=v2.0";
+	  fjs.parentNode.insertBefore(js, fjs);
+	}(document, 'script', 'facebook-jssdk'));</script>
+	<br /><br />
+	<div class="col-md-1"> </div>
+	<div class="col-md-10">
+		<div class="jumbotron" id="auth">
+			<div class="container">
+				<h1>HTraffic A/B Tests</h1>
+				<p>Вы можете проверить любое изменение кампании с помощью A/B тестирования. Подключите аккаунт Яндекс.Директа в 2 клика:</p>
+				<button type="button" class="btn btn-primary btn-lg" id="loginBtn">Подключить</button>
+				<select id="loginSelect" class="form-control" style="display:none"></select>
+			</div> 
+		</div>
+		<ul class="nav nav-tabs" role="tablist">
+			<li class="active"><a href="#createTab" role="tab" data-toggle="tab">Создать A/B Тест</a></li>
+			<!--<li><a href="#statTab" role="tab" data-toggle="tab">Посмотреть статистику по A/B тестам</a></li>-->
+			<li><a href="#helpTab" role="tab" data-toggle="tab">Справка</a></li>
+		</ul>
+		<div class="tab-content">
+			<div class="tab-pane active" id="createTab">
+				<div id="createTabInner" style="display:none" class="form-horizontal" role="form">
+					<div class="form-group">
+						<label class="col-sm-2 control-label">Кампания</label>
+						<div class="col-sm-5">
+							<select class="form-control" id="ctCamp"></select>					
+						</div>
+					</div>
+					<div class="form-group">
+						<label class="col-sm-2 control-label">Число вариантов:</label>
+						<div class="col-sm-5">
+							<select class="form-control" id="ctCount">
+								<option>2</option>
+								<option>3</option>
+							</select>					
+						</div>
+					</div>
+					<!--
+				    <div class="form-group">
+						<div class="col-sm-offset-2 col-sm-10">
+							<div class="checkbox">
+								<label>
+								  <input type="checkbox" checked="checked" id="ctModerate"> Отправить объявления на модерацию
+								</label>
+							</div>
+						</div>
+					</div>
+					-->
+					<div class="form-group">
+						<div class="col-sm-offset-2 col-sm-5">
+							<button class="btn btn-primary" id="ct_btn">Создать А/B тесты</button>
+						</div>
+					</div>
+					<hr />
+					<div class="alert alert-info alert-dismissible" role="alert">
+						<button type="button" class="close" data-dismiss="alert"><span aria-hidden="true">&times;</span><span class="sr-only">Зккрыть</span></button>
+						Исходная кампания не будет изменена.
+						Будет создано несколько ее клонов. 
+						Время показа клонов будет в шахматном порядке.
+					</div>
+					<div class="alert alert-info alert-dismissible" role="alert">
+						<button type="button" class="close" data-dismiss="alert"><span aria-hidden="true">&times;</span><span class="sr-only">Зккрыть</span></button>
+						Вы должны вручную отправить на модерацию созданные скриптом клоны и дождатся окончания модерации объявлений. Затем остановить исходную кампанию и запустить ее клоны.
+					</div>
+					<div class="alert alert-warning alert-dismissible" role="alert">
+						<button type="button" class="close" data-dismiss="alert"><span aria-hidden="true">&times;</span><span class="sr-only">Зккрыть</span></button>
+						Чтобы создать 2 варианта, у исходной кампании должно быть минимум 80 часов показа в раб. дни.
+						Для 3 вариантов &mdash; 120. 
+					</div>
+					 
+				</div>
+				<div id="createTabInfo">
+					Вы должны сначала подключить аккаунт.
+				</div>
+			</div>
+			<div class="tab-pane" id="statTab">statTab</div>
+			<div class="tab-pane" id="helpTab">
+				<p>
+					Эта утитита значительно облегчает процесс A/B тестирования в Директе.
+					Она создает 2 копии кампании с разным временем показа в шахматном порядке:
+					<br />
+					<img src="http://www.it-agency.ru/sites/all/themes/ita2011/images/shahmatka1.png" />
+				</p>
+				<p>
+					Используется метод <a href="http://www.it-agency.ru/academy/shakhmatka">Шахматка</a>:
+					<ul>
+						<li>
+							Вы можете протестировать любые изменение кампании.
+						</li>		
+						<li>
+							Эта утилита создает две копии кампании. Которые отображаются в разное время. Исходную кампанию остается без изменений.
+						</li>		
+						<li>
+							Вы должны внести  те изменения, которые хотите протестировать, в одну из копий.
+						</li>		
+						<li>
+							И отправить объявления на модерацию.
+						</li>		
+						<li>
+							После модерации остановите исходную кампанию и запустите ее копии.
+						</li>		
+						<li>
+							Через некоторое время сравните статистику по вариантам.
+						</li>		
+					</ul>
+				</p>
+				
+				<p>
+					Недостатки:
+					<ul>
+						<li>
+							Это Альфа версия. Но исходная кампания остается неизменной. 
+							Вам нужно просто проверить перед запуском настройки кампаний. 
+						</li>		
+						<li>
+							Нельзя проверять настройки временного таргетинга.
+						</li>		
+						<li>
+							Число часов показа по будням у кампании должно превышать 80.   
+						</li>		
+						<li>
+							3 варианта можно использовать только когда кампания крутиться по будням круглосуточно.
+						</li>		
+						<li>
+							В первое время из-за сброса статистики стоимость клика может вырасти.
+						</li>		
+					</ul>
+				</p>
+				
+			</div>
+		</div>
+		<br />
+		<br />
+		<hr />
+		<br />
+		<br />
+		<table><tr>
+			<td> 
+				<iframe frameborder="0" id="twitter-widget-72" scrolling="no" allowtransparency="true" src="https://platform.twitter.com/widgets/tweet_button.1411706120.html#_=1412158921961&amp;count=horizontal&amp;id=twitter-widget-72&amp;lang=en&amp;original_referer=https%3A%2F%2Fabout.twitter.com%2Fresources%2Fbuttons%23tweet&amp;size=m&amp;text=&amp;url=http%3A%2F%2Fhtraffic.ru%2Fab%2F&amp;via=seohkey" class="twitter-share-button twitter-tweet-button twitter-share-button twitter-count-horizontal" title="Twitter Tweet Button" data-twttr-rendered="true" style="width: 109px; height: 20px;"></iframe>
+				<br />
+				<iframe src="https://www.facebook.com/plugins/like.php?href=https%3A%2F%2Fwww.facebook.com%2Fhtraffic.ru&amp;width&amp;layout=standard&amp;action=like&amp;show_faces=true&amp;share=true&amp;height=80" scrolling="no" frameborder="0" style="border:none; overflow:hidden; height:80px; width:450px" allowTransparency="true"></iframe>
+			</td>
+			<td style="padding-left:25px">
+				Скрипт создан коммандой <a href="http://HTraffic.ru">HTraffic.ru</a>, бесплатного сервиса для управления контекстной рекламой, который экономит ваши деньги и время.
+			</td>
+		</tr></table>
+		<br />		
+		<hr />
+		Замечания и предложения приветствуются. 
+		<br />		
+		<br />	
+		<div class="fb-comments" data-numposts="10" data-colorscheme="light" href="http://htraffic.ru/ab/"></div>
+		<br />	
+	</div>
+</body>
+</html>
